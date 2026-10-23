@@ -11,12 +11,29 @@
 
   <body></body>
   <script>
-    const jsPsych = initJsPsych();
+  const jsPsych = initJsPsych({
+    on_finish: () => { jsPsych.data.displayData(); }
+  });
 
-    const trial = {
-      type: jsPsychMouseReading
-    };
+  const trial = {
+    type: jsPsychMouseReading,
+    text_lines: ["Mr. Watson,", "Come here", "I want to see you"],
+    line_height: 32,
+    text_offset: [50, 50],
+    aperture_shape: "roundrectangular",
+    aperture_width: 60,
+    aperture_height: 30,
+    aperture_blur: 2, 
+    button_offset: [30, 10],
+    button_size: 20,
+    font_family: "Times New Roman",
+    font_size: "28px",
+    font_color: "black",
+    canvas_colour: "#FF88FF",
+    store_image_data: false,
+    // canvas_size: [2000, 500],
+  };
 
-    jsPsych.run([trial])
+  jsPsych.run([trial])
   </script>
 </html>
