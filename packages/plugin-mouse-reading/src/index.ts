@@ -194,13 +194,525 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
   constructor(private jsPsych: JsPsych) {}
 
   trial(display_element: HTMLElement, trial: TrialType<Info>) {
+    // parameters, variables, data ---------------------------------------
+    // aperture
+    let redraw = true;
+    const apertureWidth = trial.aperture_width;
+    const apertureHeight = trial.aperture_height ?? trial.aperture_width;
+    const textBlur = trial.text_blur;
+    const apertureBlur = trial.aperture_blur;
+    const apertureCornerRadius =
+      trial.aperture_corner_radius ?? Math.min(apertureHeight, apertureWidth) / 2;
+    let lastX = -apertureWidth,
+      lastY = -apertureHeight;
+    let lastTimeStamp = performance.now();
+    // canvas size
+    const canvasHeight = trial.canvas_size[0];
+    const canvasWidth = trial.canvas_size[1];
+    const canvasColour = trial.canvas_colour;
+    // mask size
+    const maskWidth = apertureWidth + apertureBlur * 2;
+    const maskHeight = apertureHeight + apertureBlur * 2;
+    let maskShape: string;
+    if (trial.aperture_shape.toLowerCase().startsWith("circ")) maskShape = "circular";
+    if (trial.aperture_shape.toLowerCase().startsWith("rect")) maskShape = "rectangular";
+    if (trial.aperture_shape.toLowerCase().startsWith("round")) maskShape = "roundrectangular";
+    if (trial.aperture_shape.toLowerCase().startsWith("el")) maskShape = "elliptical";
+    // text position
+    const textOffsetX = trial.text_offset[0];
+    const textOffsetY = trial.text_offset[1];
+    let textFont = trial.font_weight + " " + trial.font_size + " " + trial.font_family;
+    // button placement
+    const buttonOffsets = [...trial.button_offset, ...trial.button_offset];
+    const startOffsetX = buttonOffsets[0];
+    const startOffsetY = buttonOffsets[1];
+    const stopOffsetX = buttonOffsets[2];
+    const stopOffsetY = buttonOffsets[3];
+    const buttonRadius = trial.button_size / 2;
+    const cursorDistance = trial.cursor_distance;
+    let lastLineWidth = 0;
+    let lastLineY = 0;
+    let startButtonX = 0;
+    let startButtonY = 0;
+    let stopButtonX = 0;
+    let stopButtonY = 0;
+
+    // clicks
+    var activeButtonX = -trial.canvas_size[0];
+    var activeButtonY = -trial.canvas_size[1];
+    var activeButtonRadius = buttonRadius;
+    var waitingForStart = true;
+    const hideCursor = true;
+    // other data
+    var frameRequestID;
+    var mouseData = [];
+    let jsPsych = this.jsPsych;
+    let wordBoxes = [];
+    const showSegmentation = trial.show_segmentation;
+    const storeImageData = trial.store_image_data;
+    let imageData = "";
+    let startTime: number; // clicked Start, as performance.now()
+    let stopTime: number; // clicked Stop, as performance.now()
+    let timeZero: number; // start of the trial, as performance.now()
+    let frameRate: number;
+    let frameRateArray: number[];
+    let numberOfFrames: number;
+
+    // Create canvas
+    const stimulusElement = document.createElement("div");
+    stimulusElement.id = "jspsych-canvas-button-response-stimulus";
+
+    const canvasShown = document.createElement("canvas");
+    canvasShown.id = "jspsych-canvas-stimulus";
+    canvasShown.height = canvasHeight;
+    canvasShown.width = canvasWidth;
+    canvasShown.style.display = "block";
+
+    const canvasBlur = document.createElement("canvas");
+    canvasBlur.height = canvasHeight;
+    canvasBlur.width = canvasWidth;
+
+    const canvasSharp = document.createElement("canvas");
+    canvasSharp.height = canvasHeight;
+    canvasSharp.width = canvasWidth;
+
+    const canvasMask = document.createElement("canvas");
+    canvasMask.height = maskHeight;
+    canvasMask.width = maskWidth;
+    const canvasTemporary = document.createElement("canvas");
+    canvasMask.height = maskHeight;
+    canvasMask.width = maskWidth;
+
+    stimulusElement.appendChild(canvasShown);
+    display_element.appendChild(stimulusElement);
+
+    let ctx = canvasShown.getContext("2d"); // final canvas context
+    let ctxb = canvasBlur.getContext("2d"); // blurred
+    let ctxs = canvasSharp.getContext("2d"); // sharp
+    let ctxm = canvasMask.getContext("2d"); // mask
+    let ctxt = canvasTemporary.getContext("2d"); // temporary
+
+    function draw_text(ctx: CanvasRenderingContext2D): void {
+      const lineHeight = trial.line_height;
+      const lines = trial.text_lines as string[];
+      let x = textOffsetX;
+      let y = textOffsetY;
+
+      // draw text
+      ctx.font = textFont;
+      ctx.fillStyle = trial.font_colour;
+      ctx.textRendering = trial.text_rendering as CanvasTextRendering;
+
+      for (const l of lines) {
+        ctx.fillText(l, x, y);
+        y += lineHeight;
+      }
+    }
+    function measure_text(ctx: CanvasRenderingContext2D): void {
+      const lineHeight = trial.line_height;
+      const lines = trial.text_lines as string[];
+      let x = textOffsetX;
+      let y = textOffsetY;
+
+      // setup text
+      ctx.font = textFont;
+      ctx.fillStyle = trial.font_colour;
+      ctx.textRendering = trial.text_rendering as CanvasTextRendering;
+
+      for (let i = 0; i < lines.length; i++) {
+        let l = lines[i];
+        //ctx.fillText(l, x, y);
+        let boundaries = findWordBoundaries(l);
+        let wordStarts = boundaries.start;
+        let wordEnds = boundaries.end;
+        let wordBoxesOnLine = [];
+        for (let i = 0; i < wordStarts.length; i++) {
+          let textBefore = l.slice(0, wordStarts[i]);
+          let textWord = l.slice(wordStarts[i], wordEnds[i]);
+          let mText = ctx.measureText(textBefore);
+          let mWord = ctx.measureText(textWord);
+          let wordBox = wordCoordinates(textWord, mWord, textOffsetX + mText.width, y);
+          wordBoxesOnLine.push(wordBox);
+        }
+        wordBoxes.push(wordBoxesOnLine);
+        if (i == lines.length - 1) {
+          // last line
+          lastLineY = y;
+          let mText = ctx.measureText(l);
+          lastLineWidth = mText.width;
+        }
+        y += lineHeight;
+      }
+    }
+    function wordCoordinates(word: string, measures: TextMetrics, offX: number, offY: number) {
+      let coords = {
+        word: word,
+        left: offX,
+        right: offX + measures.width,
+        width: measures.width,
+        height: measures.fontBoundingBoxAscent + measures.fontBoundingBoxDescent,
+        baseline: offY,
+        top: offY - measures.fontBoundingBoxAscent,
+        bottom: offY + measures.fontBoundingBoxDescent,
+      };
+      return coords;
+    }
+    function draw_target(
+      ctx: CanvasRenderingContext2D,
+      cx: number,
+      cy: number,
+      radius: number,
+      color: string
+    ): void {
+      ctx.beginPath();
+      ctx.fillStyle = color;
+      ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+    function drawImageCircularUsingMask(
+      source: CanvasRenderingContext2D,
+      destination: CanvasRenderingContext2D,
+      sx: number,
+      sy: number,
+      dx: number,
+      dy: number
+    ): void {
+      ctxt.globalCompositeOperation = "source-over";
+      ctxt.fillStyle = canvasColour;
+      ctxt.fillRect(0, 0, maskWidth, maskHeight);
+      ctxt.drawImage(
+        source.canvas,
+        sx - maskWidth / 2,
+        sy - maskHeight / 2,
+        maskWidth,
+        maskHeight,
+        0,
+        0,
+        maskWidth,
+        maskHeight
+      );
+
+      /* ---------- 5️⃣ Apply the mask (destination‑in) ---------- */
+      ctxt.globalCompositeOperation = "destination-in";
+      ctxt.drawImage(canvasMask, 0, 0);
+
+      /* ---------- 6️⃣ Finally draw the masked region onto the destination ---------- */
+      // Here we place it at a different location just to illustrate the effect
+      destination.drawImage(
+        ctxt.canvas,
+        0,
+        0,
+        maskWidth,
+        maskHeight,
+        sx - maskWidth / 2,
+        sy - maskHeight / 2,
+        maskWidth,
+        maskHeight
+      );
+    }
+    function setupGraphics() {
+      // draw combined
+      measure_text(ctx);
+      updateButtonLocation();
+
+      // draw text blurred
+      ctxb.filter = `blur(${textBlur}px)`;
+      draw_text(ctxb);
+      draw_target(ctxb, stopButtonX, stopButtonY, buttonRadius, "darkred");
+      ctxb.filter = "none";
+
+      // draw text sharp
+      draw_text(ctxs);
+      draw_target(ctxs, stopButtonX, stopButtonY, buttonRadius, "darkred");
+      if (showSegmentation) {
+        drawWordBoxes(ctxs);
+      }
+      if (storeImageData) {
+        imageData = canvasSharp.toDataURL("image/png");
+      }
+      // draw mask
+      switch (maskShape) {
+        case "circular":
+          prepareMaskCircular();
+          break;
+        case "rectangular":
+          prepareMaskRectangular();
+          break;
+        case "roundrectangular":
+          prepareMaskRoundRectangular();
+          break;
+        case "elliptical":
+          prepareMaskElliptical();
+          break;
+      }
+      // saveCanvas(canvasMask, "mask.png");
+      // end of drawing
+    }
+    function saveCanvas(canvas, filename) {
+      const dataURL = canvas.toDataURL("image/png");
+      const link = document.createElement("a");
+      link.href = dataURL;
+      link.download = filename;
+      link.click();
+    }
+    function prepareMaskCircular() {
+      ctxm.fillStyle = "rgba(255,255,255,0)";
+      ctxm.fillRect(0, 0, maskWidth, maskHeight);
+      ctxm.filter = `blur(${apertureBlur}px)`;
+      ctxm.fillStyle = "rgba(255,255,255,1)";
+
+      ctxm.beginPath();
+      ctxm.arc(maskWidth / 2, maskHeight / 2, apertureWidth / 2, 0, 2 * Math.PI, false);
+      ctxm.fill();
+
+      ctxm.filter = "none";
+      ctxm.globalCompositeOperation = "source-over";
+    }
+    function prepareMaskElliptical() {
+      ctxm.fillStyle = "rgba(255,255,255,0)";
+      ctxm.fillRect(0, 0, maskWidth, maskHeight);
+      ctxm.filter = `blur(${apertureBlur}px)`;
+      ctxm.fillStyle = "rgba(255,255,255,1)";
+
+      ctxm.beginPath();
+      ctxm.ellipse(
+        maskWidth / 2,
+        maskHeight / 2,
+        apertureWidth / 2,
+        apertureHeight / 2,
+        0,
+        0,
+        2 * Math.PI,
+        false
+      );
+      ctxm.fill();
+
+      ctxm.filter = "none";
+      ctxm.globalCompositeOperation = "source-over";
+    }
+    function prepareMaskRectangular() {
+      ctxm.fillStyle = "rgba(255,255,255,0)";
+      ctxm.fillRect(0, 0, maskWidth, maskHeight);
+      ctxm.filter = `blur(${apertureBlur}px)`;
+      ctxm.fillStyle = "rgba(255,255,255,1)";
+
+      ctxm.fillRect(apertureBlur, apertureBlur, apertureWidth, apertureHeight);
+
+      ctxm.filter = "none";
+      ctxm.globalCompositeOperation = "source-over";
+    }
+
+    function prepareMaskRoundRectangular() {
+      ctxm.fillStyle = "rgba(255,255,255,0)";
+      ctxm.fillRect(0, 0, maskWidth, maskHeight);
+      ctxm.filter = `blur(${apertureBlur}px)`;
+      ctxm.fillStyle = "rgba(255,255,255,1)";
+
+      ctxm.beginPath();
+      ctxm.roundRect(
+        apertureBlur,
+        apertureBlur,
+        apertureWidth,
+        apertureHeight,
+        apertureCornerRadius
+      );
+      ctxm.fill();
+
+      ctxm.filter = "none";
+      ctxm.globalCompositeOperation = "source-over";
+    }
+    function animateMouseMotion(): void {
+      frameRequestID = window.requestAnimationFrame(animate);
+      function animate() {
+        if (!waitingForStart) {
+          logMouseEvent(lastX, lastY, performance.now() - startTime);
+        }
+        if (redraw) {
+          ctx.fillStyle = canvasColour;
+          ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+          if (waitingForStart) {
+            draw_target(ctx, startButtonX, startButtonY, buttonRadius, "green");
+          } else {
+            ctx.drawImage(ctxb.canvas, 0, 0);
+            drawImageCircularUsingMask(ctxs, ctx, lastX, lastY, lastX, lastY);
+          }
+
+          redraw = false;
+          let now = performance.now();
+          lastTimeStamp = now;
+        }
+        frameRequestID = window.requestAnimationFrame(animate);
+      }
+    }
+    function drawWordBoxes(ctx: CanvasRenderingContext2D) {
+      let boxes = wordBoxes.flat();
+      for (let i = 0; i < boxes.length; i++) {
+        ctx.strokeStyle = "#FF8888";
+        ctx.strokeRect(boxes[i].left, boxes[i].top, boxes[i].width, boxes[i].height);
+      }
+    }
+    function activateStartButton() {
+      activeButtonX = startButtonX;
+      activeButtonY = startButtonY;
+      activeButtonRadius = buttonRadius;
+    }
+    function activateStopButton() {
+      activeButtonX = stopButtonX;
+      activeButtonY = stopButtonY;
+      activeButtonRadius = buttonRadius;
+    }
+    function updateButtonLocation() {
+      startButtonX = textOffsetX - startOffsetX;
+      startButtonY = textOffsetY - startOffsetY;
+      stopButtonX = textOffsetX + lastLineWidth + stopOffsetX;
+      stopButtonY = lastLineY - stopOffsetY;
+    }
+    function logMouseEvent(x: number, y: number, timestamp: number) {
+      let eventRecord = { x: x, y: y, t: timestamp };
+      mouseData.push(eventRecord);
+    }
+    function canvasMousePos(e: MouseEvent, canvas: HTMLCanvasElement): { x: number; y: number } {
+      const r = canvas.getBoundingClientRect();
+      return {
+        x: (e.clientX - r.left) * (canvas.width / r.width),
+        y: (e.clientY - r.top) * (canvas.height / r.height),
+      };
+    }
+    function onMove(event: MouseEvent) {
+      let e = canvasMousePos(event, canvasShown);
+      let cx = Math.round(e.x),
+        cy = Math.round(e.y);
+      if (cx == lastX && cy == lastY) {
+        // no move after rounding coordinates
+        redraw = false;
+      } else {
+        lastX = cx;
+        lastY = cy;
+        if (
+          cx > -apertureWidth / 2 &&
+          cx < canvasWidth + apertureWidth / 2 &&
+          cy > -apertureHeight / 2 &&
+          cy < canvasHeight + apertureHeight / 2
+        ) {
+          // mouse affects canvas (inside or just beyond the boundary)
+          redraw = true;
+        } else {
+          // mouse too far away
+          redraw = false;
+        }
+        if (!waitingForStart && hideCursor) {
+          // check button distance for cursor hiding
+          let dx = cx - activeButtonX;
+          let dy = cy - activeButtonY;
+          let dd = Math.sqrt(dx * dx + dy * dy);
+          if (dd < cursorDistance) {
+            canvasShown.style.cursor = "pointer";
+          } else {
+            canvasShown.style.cursor = "none";
+          }
+        }
+      }
+    }
+    function onMouseUp(event: MouseEvent) {
+      let e = canvasMousePos(event, canvasShown);
+      let dx = e.x - activeButtonX;
+      let dy = e.y - activeButtonY;
+      let dd = Math.sqrt(dx * dx + dy * dy);
+      let clicked = dd < activeButtonRadius;
+      if (clicked) {
+        if (waitingForStart) {
+          // start was clicked
+          waitingForStart = false;
+          redraw = true;
+          startTime = performance.now();
+          activateStopButton();
+        } else {
+          // already collecting data, stop clicked
+          end_trial();
+        }
+      }
+    }
+
+    // start trial
+    setupGraphics();
+    timeZero = performance.now();
+    activateStartButton();
+    animateMouseMotion();
+    document.body.addEventListener("mousemove", onMove, false);
+    document.body.addEventListener("touchstart", onMove, false);
+    document.body.addEventListener("touchmove", onMove, false);
+    document.body.addEventListener("mouseup", onMouseUp, false);
+
     // data saving
     var trial_data = {
-      data1: 99, // Make sure this type and name matches the information for data1 in the data object contained within the info const.
-      data2: "hello world!", // Make sure this type and name matches the information for data2 in the data object contained within the info const.
+      word_boxes: wordBoxes,
+      image_data: imageData,
+      mouse_data: mouseData,
+      start_time: -1,
+      stop_time: -1,
+      ifi_times: [], //
+      start_button: [startButtonX, startButtonY],
+      stop_button: [stopButtonX, stopButtonY],
+      frame_rate: null,
+      frame_rate_array: [],
+      number_of_frames: 0,
     };
-    // end trial
-    this.jsPsych.finishTrial(trial_data);
+
+    // function to end trial when it is time
+    function end_trial(): void {
+      stopTime = performance.now();
+      window.cancelAnimationFrame(frameRequestID);
+
+      document.removeEventListener("mousemove", onMove, false);
+      document.removeEventListener("touchstart", onMove, false);
+      document.removeEventListener("touchmove", onMove, false);
+
+      // gather the data to store for the trial
+      trial_data.start_time = startTime - timeZero;
+      trial_data.stop_time = stopTime - timeZero;
+      calculateInterFrameIntervals();
+      trial_data.frame_rate = frameRate;
+      trial_data.frame_rate_array = frameRateArray;
+      trial_data.number_of_frames = numberOfFrames;
+
+      // end trial
+      jsPsych.finishTrial(trial_data);
+    }
+    function findWordBoundaries(sentence: string) {
+      let startPositions = [];
+      let endPositions = [];
+      let wordStarted = false;
+      for (let i = 0; i < sentence.length; i++) {
+        if (sentence[i] == " ") {
+          if (wordStarted) {
+            wordStarted = false;
+            endPositions.push(i);
+          }
+        } else {
+          if (!wordStarted) {
+            wordStarted = true;
+            startPositions.push(i);
+          }
+        }
+      }
+      if (wordStarted) endPositions.push(sentence.length);
+      return { start: startPositions, end: endPositions };
+    }
+    function calculateInterFrameIntervals(): void {
+      frameRateArray = [];
+      let lastTime = 0;
+      for (let i = 0; i < mouseData.length; i++) {
+        frameRateArray.push(mouseData[i].t - lastTime);
+        lastTime = mouseData[i].t;
+      }
+      numberOfFrames = frameRateArray.length;
+      if (numberOfFrames > 0) {
+        frameRate =
+          (frameRateArray as number[]).reduce((total, current) => total + current) / numberOfFrames;
+      } else {
+        frameRate = 0;
+      }
+    }
   }
 }
 
