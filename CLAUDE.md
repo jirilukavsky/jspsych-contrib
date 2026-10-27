@@ -32,3 +32,8 @@ Typical package: `src/index.ts` (+ `index.spec.ts`), `rollup.config.mjs`, `jest.
 ## Style
 
 Prettier with `printWidth: 100` and import-sort (module style) plugin. Contributions should be compatible with jsPsych v7+ (new code targets v8).
+
+## Additional instructions
+
+- We are editting only the folder `packages/plugin-mouse-reading`. No code outside this folder should be changed.
+

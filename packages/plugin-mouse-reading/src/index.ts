@@ -132,12 +132,12 @@ const info = <const>{
     start_time: {
       type: ParameterType.FLOAT,
     },
-    /** The time when the stop button was clicked, in milliseconds.
-     * The time is relative to the start time, i.e. zero means stop button was clicked immediately after start button.*/
-    finish_time: {
+    /** The time between the start and stop buttons were clicked, in milliseconds,
+     * i.e. zero means stop button was clicked immediately after start button.*/
+    reading_time: {
       type: ParameterType.FLOAT,
     },
-    /** Array of mouse events. Times are relative to the start time (start button clicked). */
+    /** Array of mouse events. Times are relative to the start_time (start button clicked). */
     mouse_data: {
       type: ParameterType.OBJECT,
     },
@@ -145,10 +145,6 @@ const info = <const>{
      * The coordinates are relative to the canvas, i.e. same as the mouse data. */
     word_boxes: {
       type: ParameterType.OBJECT,
-    },
-    /** Provide a clear description of the data2 that could be used as documentation. We will eventually use these comments to automatically build documentation and produce metadata. */
-    rendered_text: {
-      type: ParameterType.STRING,
     },
     /** Start button coordinates */
     start_button: {
@@ -160,18 +156,9 @@ const info = <const>{
       type: ParameterType.FLOAT,
       array: true,
     },
-    /** The average frame rate for the trial, in ms. */
-    frame_rate: {
-      type: ParameterType.FLOAT,
-    },
-    /** The array of frame times in ms for the trial. */
-    frame_rate_array: {
-      type: ParameterType.INT,
-      array: true,
-    },
-    /** The number of frames in the trial. */
-    number_of_frames: {
-      type: ParameterType.INT,
+    /** Optional Data URL text with the PNG of the rendered text */
+    image_data: {
+      type: ParameterType.STRING,
     },
   },
   // When you run build on your plugin, citations will be generated here based on the information in the CITATION.cff file.
@@ -213,7 +200,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     // mask size
     const maskWidth = apertureWidth + apertureBlur * 2;
     const maskHeight = apertureHeight + apertureBlur * 2;
-    let maskShape: string;
+    let maskShape = "circular";
     if (trial.aperture_shape.toLowerCase().startsWith("circ")) maskShape = "circular";
     if (trial.aperture_shape.toLowerCase().startsWith("rect")) maskShape = "rectangular";
     if (trial.aperture_shape.toLowerCase().startsWith("round")) maskShape = "roundrectangular";
@@ -254,9 +241,6 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     let startTime: number; // clicked Start, as performance.now()
     let stopTime: number; // clicked Stop, as performance.now()
     let timeZero: number; // start of the trial, as performance.now()
-    let frameRate: number;
-    let frameRateArray: number[];
-    let numberOfFrames: number;
 
     // Create canvas
     const stimulusElement = document.createElement("div");
@@ -622,6 +606,8 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       if (clicked) {
         if (waitingForStart) {
           // start was clicked
+          lastX = Math.round(e.x);
+          lastY = Math.round(e.y);
           waitingForStart = false;
           redraw = true;
           startTime = performance.now();
@@ -638,10 +624,8 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     timeZero = performance.now();
     activateStartButton();
     animateMouseMotion();
-    document.body.addEventListener("mousemove", onMove, false);
-    document.body.addEventListener("touchstart", onMove, false);
-    document.body.addEventListener("touchmove", onMove, false);
-    document.body.addEventListener("mouseup", onMouseUp, false);
+    document.addEventListener("mousemove", onMove, false);
+    document.addEventListener("mouseup", onMouseUp, false);
 
     // data saving
     var trial_data = {
@@ -649,13 +633,9 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       image_data: imageData,
       mouse_data: mouseData,
       start_time: -1,
-      stop_time: -1,
-      ifi_times: [], //
+      reading_time: -1,
       start_button: [startButtonX, startButtonY],
       stop_button: [stopButtonX, stopButtonY],
-      frame_rate: null,
-      frame_rate_array: [],
-      number_of_frames: 0,
     };
 
     // function to end trial when it is time
@@ -664,17 +644,14 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       window.cancelAnimationFrame(frameRequestID);
 
       document.removeEventListener("mousemove", onMove, false);
-      document.removeEventListener("touchstart", onMove, false);
-      document.removeEventListener("touchmove", onMove, false);
+      document.removeEventListener("mouseup", onMouseUp, false);
 
       // gather the data to store for the trial
       trial_data.start_time = startTime - timeZero;
-      trial_data.stop_time = stopTime - timeZero;
-      calculateInterFrameIntervals();
-      trial_data.frame_rate = frameRate;
-      trial_data.frame_rate_array = frameRateArray;
-      trial_data.number_of_frames = numberOfFrames;
+      trial_data.reading_time = stopTime - startTime;
 
+      canvasShown.style.cursor = "default"; // optional, see below
+      display_element.innerHTML = "";
       // end trial
       jsPsych.finishTrial(trial_data);
     }
@@ -698,22 +675,8 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       if (wordStarted) endPositions.push(sentence.length);
       return { start: startPositions, end: endPositions };
     }
-    function calculateInterFrameIntervals(): void {
-      frameRateArray = [];
-      let lastTime = 0;
-      for (let i = 0; i < mouseData.length; i++) {
-        frameRateArray.push(mouseData[i].t - lastTime);
-        lastTime = mouseData[i].t;
-      }
-      numberOfFrames = frameRateArray.length;
-      if (numberOfFrames > 0) {
-        frameRate =
-          (frameRateArray as number[]).reduce((total, current) => total + current) / numberOfFrames;
-      } else {
-        frameRate = 0;
-      }
-    }
   }
+  // utility functions potentially shared between trial() and simulate()
 }
 
 export default MouseReadingPlugin;
