@@ -268,11 +268,11 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     stimulusElement.appendChild(canvasShown);
     display_element.appendChild(stimulusElement);
 
-    let ctx = canvasShown.getContext("2d"); // final canvas context
-    let ctxb = canvasBlur.getContext("2d"); // blurred
-    let ctxs = canvasSharp.getContext("2d"); // sharp
-    let ctxm = canvasMask.getContext("2d"); // mask
-    let ctxt = canvasTemporary.getContext("2d"); // temporary
+    let ctxShown = canvasShown.getContext("2d"); // final canvas context
+    let ctxBlur = canvasBlur.getContext("2d"); // blurred
+    let ctxSharp = canvasSharp.getContext("2d"); // sharp
+    let ctxMask = canvasMask.getContext("2d"); // mask
+    let ctxTemporary = canvasTemporary.getContext("2d"); // temporary
 
     function draw_text(ctx: CanvasRenderingContext2D): void {
       const lineHeight = trial.line_height;
@@ -351,7 +351,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
       ctx.fill();
     }
-    function drawImageCircularUsingMask(
+    function drawImageUsingMask(
       source: CanvasRenderingContext2D,
       destination: CanvasRenderingContext2D,
       sx: number,
@@ -359,10 +359,13 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       dx: number,
       dy: number
     ): void {
-      ctxt.globalCompositeOperation = "source-over";
-      ctxt.fillStyle = canvasColour;
-      ctxt.fillRect(0, 0, maskWidth, maskHeight);
-      ctxt.drawImage(
+      // Clean the canvas with default colour (and default blending mode)
+      ctxTemporary.globalCompositeOperation = "source-over";
+      ctxTemporary.fillStyle = canvasColour;
+      ctxTemporary.fillRect(0, 0, maskWidth, maskHeight);
+      // Take a part of source image of the size of mask,
+      // and put it on the canvas
+      ctxTemporary.drawImage(
         source.canvas,
         sx - maskWidth / 2,
         sy - maskHeight / 2,
@@ -374,14 +377,16 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
         maskHeight
       );
 
-      /* ---------- 5️⃣ Apply the mask (destination‑in) ---------- */
-      ctxt.globalCompositeOperation = "destination-in";
-      ctxt.drawImage(canvasMask, 0, 0);
+      // Apply the mask on canvas:
+      // "destination-in" keeps only the parts of the existing canvas content (the destination)
+      // that overlap with the new shape or image you are drawing (the source).
+      // Everything else is made transparent.
+      ctxTemporary.globalCompositeOperation = "destination-in";
+      ctxTemporary.drawImage(canvasMask, 0, 0);
 
-      /* ---------- 6️⃣ Finally draw the masked region onto the destination ---------- */
-      // Here we place it at a different location just to illustrate the effect
+      // Copies the canvas content on the destination
       destination.drawImage(
-        ctxt.canvas,
+        ctxTemporary.canvas,
         0,
         0,
         maskWidth,
@@ -394,20 +399,20 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     }
     function setupGraphics() {
       // draw combined
-      measure_text(ctx);
+      measure_text(ctxShown);
       updateButtonLocation();
 
       // draw text blurred
-      ctxb.filter = `blur(${textBlur}px)`;
-      draw_text(ctxb);
-      draw_target(ctxb, stopButtonX, stopButtonY, buttonRadius, "darkred");
-      ctxb.filter = "none";
+      ctxBlur.filter = `blur(${textBlur}px)`;
+      draw_text(ctxBlur);
+      draw_target(ctxBlur, stopButtonX, stopButtonY, buttonRadius, "darkred");
+      ctxBlur.filter = "none";
 
       // draw text sharp
-      draw_text(ctxs);
-      draw_target(ctxs, stopButtonX, stopButtonY, buttonRadius, "darkred");
+      draw_text(ctxSharp);
+      draw_target(ctxSharp, stopButtonX, stopButtonY, buttonRadius, "darkred");
       if (showSegmentation) {
-        drawWordBoxes(ctxs);
+        drawWordBoxes(ctxSharp);
       }
       if (storeImageData) {
         imageData = canvasSharp.toDataURL("image/png");
@@ -424,35 +429,35 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       link.click();
     }
     function prepareMaskWithShape(maskShape: string) {
-      ctxm.fillStyle = "rgba(255,255,255,0)";
-      ctxm.fillRect(0, 0, maskWidth, maskHeight);
-      ctxm.filter = `blur(${apertureBlur}px)`;
-      ctxm.fillStyle = "rgba(255,255,255,1)";
+      ctxMask.fillStyle = "rgba(255,255,255,0)";
+      ctxMask.fillRect(0, 0, maskWidth, maskHeight);
+      ctxMask.filter = `blur(${apertureBlur}px)`;
+      ctxMask.fillStyle = "rgba(255,255,255,1)";
 
       // draw mask
       switch (maskShape) {
         case "circular":
-          ctxm.beginPath();
-          ctxm.arc(maskWidth / 2, maskHeight / 2, apertureWidth / 2, 0, 2 * Math.PI, false);
-          ctxm.fill();
+          ctxMask.beginPath();
+          ctxMask.arc(maskWidth / 2, maskHeight / 2, apertureWidth / 2, 0, 2 * Math.PI, false);
+          ctxMask.fill();
           break;
         case "rectangular":
-          ctxm.fillRect(apertureBlur, apertureBlur, apertureWidth, apertureHeight);
+          ctxMask.fillRect(apertureBlur, apertureBlur, apertureWidth, apertureHeight);
           break;
         case "roundrectangular":
-          ctxm.beginPath();
-          ctxm.roundRect(
+          ctxMask.beginPath();
+          ctxMask.roundRect(
             apertureBlur,
             apertureBlur,
             apertureWidth,
             apertureHeight,
             apertureCornerRadius
           );
-          ctxm.fill();
+          ctxMask.fill();
           break;
         case "elliptical":
-          ctxm.beginPath();
-          ctxm.ellipse(
+          ctxMask.beginPath();
+          ctxMask.ellipse(
             maskWidth / 2,
             maskHeight / 2,
             apertureWidth / 2,
@@ -462,12 +467,12 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
             2 * Math.PI,
             false
           );
-          ctxm.fill();
+          ctxMask.fill();
           break;
       }
 
-      ctxm.filter = "none";
-      ctxm.globalCompositeOperation = "source-over";
+      ctxMask.filter = "none";
+      ctxMask.globalCompositeOperation = "source-over";
     }
 
     function animateMouseMotion(): void {
@@ -477,13 +482,13 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
           logMouseEvent(lastX, lastY, performance.now() - startTime);
         }
         if (redraw) {
-          ctx.fillStyle = canvasColour;
-          ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+          ctxShown.fillStyle = canvasColour;
+          ctxShown.fillRect(0, 0, canvasWidth, canvasHeight);
           if (waitingForStart) {
-            draw_target(ctx, startButtonX, startButtonY, buttonRadius, "green");
+            draw_target(ctxShown, startButtonX, startButtonY, buttonRadius, "green");
           } else {
-            ctx.drawImage(ctxb.canvas, 0, 0);
-            drawImageCircularUsingMask(ctxs, ctx, lastX, lastY, lastX, lastY);
+            ctxShown.drawImage(ctxBlur.canvas, 0, 0);
+            drawImageUsingMask(ctxSharp, ctxShown, lastX, lastY, lastX, lastY);
           }
 
           redraw = false;
