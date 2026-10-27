@@ -44,7 +44,8 @@ const info = <const>{
     },
     /** Shape of the aperture. Possible values: "circular", "rectangular", "roundrectangular", "elliptical". */
     aperture_shape: {
-      type: ParameterType.STRING,
+      type: ParameterType.SELECT,
+      options: ["circular", "rectangular", "roundrectangular", "elliptical"],
       default: "circular",
     },
     /** Size of the gaussian gradient in pixels.
@@ -199,11 +200,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     // mask size
     const maskWidth = apertureWidth + apertureBlur * 2;
     const maskHeight = apertureHeight + apertureBlur * 2;
-    let maskShape = "circular";
-    if (trial.aperture_shape.toLowerCase().startsWith("circ")) maskShape = "circular";
-    if (trial.aperture_shape.toLowerCase().startsWith("rect")) maskShape = "rectangular";
-    if (trial.aperture_shape.toLowerCase().startsWith("round")) maskShape = "roundrectangular";
-    if (trial.aperture_shape.toLowerCase().startsWith("el")) maskShape = "elliptical";
+    const maskShape = trial.aperture_shape;
     // text position
     const textOffsetX = trial.text_offset[0];
     const textOffsetY = trial.text_offset[1];
@@ -230,7 +227,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     let waitingForStart = true;
     const hideCursor = true;
     // other data
-    let frameRequestID;
+    let frameRequestID: number;
     let mouseData = [];
     let jsPsych = this.jsPsych;
     let wordBoxes = [];
@@ -261,6 +258,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     const canvasMask = document.createElement("canvas");
     canvasMask.height = maskHeight;
     canvasMask.width = maskWidth;
+
     const canvasTemporary = document.createElement("canvas");
     canvasTemporary.height = maskHeight;
     canvasTemporary.width = maskWidth;
@@ -355,9 +353,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       source: CanvasRenderingContext2D,
       destination: CanvasRenderingContext2D,
       sx: number,
-      sy: number,
-      dx: number,
-      dy: number
+      sy: number
     ): void {
       // Clean the canvas with default colour (and default blending mode)
       ctxTemporary.globalCompositeOperation = "source-over";
@@ -488,7 +484,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
             draw_target(ctxShown, startButtonX, startButtonY, buttonRadius, "green");
           } else {
             ctxShown.drawImage(ctxBlur.canvas, 0, 0);
-            drawImageUsingMask(ctxSharp, ctxShown, lastX, lastY, lastX, lastY);
+            drawImageUsingMask(ctxSharp, ctxShown, lastX, lastY);
           }
 
           redraw = false;
@@ -536,7 +532,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
         cy = Math.round(e.y);
       if (cx == lastX && cy == lastY) {
         // no move after rounding coordinates
-        redraw = false;
+        redraw = redraw || false;
       } else {
         lastX = cx;
         lastY = cy;
@@ -550,7 +546,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
           redraw = true;
         } else {
           // mouse too far away
-          redraw = false;
+          redraw = redraw || false;
         }
         if (!waitingForStart && hideCursor) {
           // check button distance for cursor hiding
@@ -565,7 +561,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
         }
       }
     }
-    function onMouseUp(event: MouseEvent) {
+    function onMouseDown(event: MouseEvent) {
       let e = canvasMousePos(event, canvasShown);
       let dx = e.x - activeButtonX;
       let dy = e.y - activeButtonY;
@@ -593,7 +589,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     activateStartButton();
     animateMouseMotion();
     document.addEventListener("mousemove", onMove, false);
-    document.addEventListener("mouseup", onMouseUp, false);
+    document.addEventListener("mousedown", onMouseDown, false);
 
     // data saving
     let trial_data = {
@@ -612,7 +608,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       window.cancelAnimationFrame(frameRequestID);
 
       document.removeEventListener("mousemove", onMove, false);
-      document.removeEventListener("mouseup", onMouseUp, false);
+      document.removeEventListener("mousedown", onMouseDown, false);
 
       // gather the data to store for the trial
       trial_data.start_time = startTime - timeZero;

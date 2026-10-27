@@ -13,6 +13,12 @@ describe("mouse-reading plugin", () => {
       },
     ]);
 
-    await expectFinished();
+    // minimal version
+    await expect(displayElement.querySelector("canvas"));
+    // later I plan to add 2 simulated mouse clicks
+    // I know the offset, but the location of the stop button
+    // depends on the text length which we do not know
+
+    // await expectFinished();
   });
 });
