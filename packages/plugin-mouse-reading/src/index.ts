@@ -127,6 +127,11 @@ const info = <const>{
       type: ParameterType.STRING,
       default: "white",
     },
+    /** Aperture colour */
+    aperture_colour: {
+      type: ParameterType.STRING,
+      default: "white",
+    },
   },
   data: {
     /** The time when the start button was clicked, in milliseconds. */
@@ -197,6 +202,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     const canvasHeight = trial.canvas_size[0];
     const canvasWidth = trial.canvas_size[1];
     const canvasColour = trial.canvas_colour;
+    const apertureColour = trial.aperture_colour;
     // mask size
     const maskWidth = apertureWidth + apertureBlur * 2;
     const maskHeight = apertureHeight + apertureBlur * 2;
@@ -221,8 +227,8 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     let stopButtonY = 0;
 
     // clicks
-    let activeButtonX = -trial.canvas_size[0];
-    let activeButtonY = -trial.canvas_size[1];
+    let activeButtonX = -1;
+    let activeButtonY = -1;
     let activeButtonRadius = buttonRadius;
     let waitingForStart = true;
     const hideCursor = true;
@@ -399,12 +405,18 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       updateButtonLocation();
 
       // draw text blurred
+      ctxBlur.globalCompositeOperation = "source-over";
+      ctxBlur.fillStyle = canvasColour;
+      ctxBlur.fillRect(0, 0, ctxBlur.canvas.width, ctxBlur.canvas.height);
       ctxBlur.filter = `blur(${textBlur}px)`;
       draw_text(ctxBlur);
       draw_target(ctxBlur, stopButtonX, stopButtonY, buttonRadius, "darkred");
       ctxBlur.filter = "none";
 
       // draw text sharp
+      ctxSharp.globalCompositeOperation = "source-over";
+      ctxSharp.fillStyle = apertureColour;
+      ctxSharp.fillRect(0, 0, ctxSharp.canvas.width, ctxSharp.canvas.height);
       draw_text(ctxSharp);
       draw_target(ctxSharp, stopButtonX, stopButtonY, buttonRadius, "darkred");
       if (showSegmentation) {
@@ -526,6 +538,15 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
         y: (e.clientY - r.top) * (canvas.height / r.height),
       };
     }
+    function insideCanvas(x: number, y: number): boolean {
+      const delta = 2;
+      let result =
+        x > -maskWidth / 2 - delta &&
+        x < canvasWidth + maskWidth / 2 + delta &&
+        y > -maskHeight / 2 - delta &&
+        y < canvasHeight + maskHeight / 2 + delta;
+      return result;
+    }
     function onMove(event: MouseEvent) {
       let e = canvasMousePos(event, canvasShown);
       let cx = Math.round(e.x),
@@ -534,20 +555,16 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
         // no move after rounding coordinates
         redraw = redraw || false;
       } else {
-        lastX = cx;
-        lastY = cy;
-        if (
-          cx > -apertureWidth / 2 &&
-          cx < canvasWidth + apertureWidth / 2 &&
-          cy > -apertureHeight / 2 &&
-          cy < canvasHeight + apertureHeight / 2
-        ) {
+        if (insideCanvas(cx, cy)) {
           // mouse affects canvas (inside or just beyond the boundary)
           redraw = true;
         } else {
-          // mouse too far away
-          redraw = redraw || false;
+          // mouse too far away, redraw only if just left
+          redraw = redraw || insideCanvas(lastX, lastY);
         }
+        lastX = cx;
+        lastY = cy;
+
         if (!waitingForStart && hideCursor) {
           // check button distance for cursor hiding
           let dx = cx - activeButtonX;
