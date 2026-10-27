@@ -12,7 +12,7 @@ const info = <const>{
       array: true,
       default: [240, 500],
     },
-    /** Presented text. Each different string in the array will become a separate button. */
+    /** Presented text. Each different string in the array will become a separate line of text. */
     text_lines: {
       type: ParameterType.STRING,
       default: [""],
@@ -192,7 +192,6 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       trial.aperture_corner_radius ?? Math.min(apertureHeight, apertureWidth) / 2;
     let lastX = -apertureWidth,
       lastY = -apertureHeight;
-    let lastTimeStamp = performance.now();
     // canvas size
     const canvasHeight = trial.canvas_size[0];
     const canvasWidth = trial.canvas_size[1];
@@ -225,26 +224,25 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     let stopButtonY = 0;
 
     // clicks
-    var activeButtonX = -trial.canvas_size[0];
-    var activeButtonY = -trial.canvas_size[1];
-    var activeButtonRadius = buttonRadius;
-    var waitingForStart = true;
+    let activeButtonX = -trial.canvas_size[0];
+    let activeButtonY = -trial.canvas_size[1];
+    let activeButtonRadius = buttonRadius;
+    let waitingForStart = true;
     const hideCursor = true;
     // other data
-    var frameRequestID;
-    var mouseData = [];
+    let frameRequestID;
+    let mouseData = [];
     let jsPsych = this.jsPsych;
     let wordBoxes = [];
     const showSegmentation = trial.show_segmentation;
     const storeImageData = trial.store_image_data;
     let imageData = "";
     let startTime: number; // clicked Start, as performance.now()
-    let stopTime: number; // clicked Stop, as performance.now()
     let timeZero: number; // start of the trial, as performance.now()
 
     // Create canvas
     const stimulusElement = document.createElement("div");
-    stimulusElement.id = "jspsych-canvas-button-response-stimulus";
+    stimulusElement.id = "jspsych-mouse-reading-stimulus";
 
     const canvasShown = document.createElement("canvas");
     canvasShown.id = "jspsych-canvas-stimulus";
@@ -264,8 +262,8 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     canvasMask.height = maskHeight;
     canvasMask.width = maskWidth;
     const canvasTemporary = document.createElement("canvas");
-    canvasMask.height = maskHeight;
-    canvasMask.width = maskWidth;
+    canvasTemporary.height = maskHeight;
+    canvasTemporary.width = maskWidth;
 
     stimulusElement.appendChild(canvasShown);
     display_element.appendChild(stimulusElement);
@@ -414,21 +412,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       if (storeImageData) {
         imageData = canvasSharp.toDataURL("image/png");
       }
-      // draw mask
-      switch (maskShape) {
-        case "circular":
-          prepareMaskCircular();
-          break;
-        case "rectangular":
-          prepareMaskRectangular();
-          break;
-        case "roundrectangular":
-          prepareMaskRoundRectangular();
-          break;
-        case "elliptical":
-          prepareMaskElliptical();
-          break;
-      }
+      prepareMaskWithShape(maskShape);
       // saveCanvas(canvasMask, "mask.png");
       // end of drawing
     }
@@ -439,72 +423,53 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       link.download = filename;
       link.click();
     }
-    function prepareMaskCircular() {
+    function prepareMaskWithShape(maskShape: string) {
       ctxm.fillStyle = "rgba(255,255,255,0)";
       ctxm.fillRect(0, 0, maskWidth, maskHeight);
       ctxm.filter = `blur(${apertureBlur}px)`;
       ctxm.fillStyle = "rgba(255,255,255,1)";
 
-      ctxm.beginPath();
-      ctxm.arc(maskWidth / 2, maskHeight / 2, apertureWidth / 2, 0, 2 * Math.PI, false);
-      ctxm.fill();
+      // draw mask
+      switch (maskShape) {
+        case "circular":
+          ctxm.beginPath();
+          ctxm.arc(maskWidth / 2, maskHeight / 2, apertureWidth / 2, 0, 2 * Math.PI, false);
+          ctxm.fill();
+          break;
+        case "rectangular":
+          ctxm.fillRect(apertureBlur, apertureBlur, apertureWidth, apertureHeight);
+          break;
+        case "roundrectangular":
+          ctxm.beginPath();
+          ctxm.roundRect(
+            apertureBlur,
+            apertureBlur,
+            apertureWidth,
+            apertureHeight,
+            apertureCornerRadius
+          );
+          ctxm.fill();
+          break;
+        case "elliptical":
+          ctxm.beginPath();
+          ctxm.ellipse(
+            maskWidth / 2,
+            maskHeight / 2,
+            apertureWidth / 2,
+            apertureHeight / 2,
+            0,
+            0,
+            2 * Math.PI,
+            false
+          );
+          ctxm.fill();
+          break;
+      }
 
       ctxm.filter = "none";
       ctxm.globalCompositeOperation = "source-over";
     }
-    function prepareMaskElliptical() {
-      ctxm.fillStyle = "rgba(255,255,255,0)";
-      ctxm.fillRect(0, 0, maskWidth, maskHeight);
-      ctxm.filter = `blur(${apertureBlur}px)`;
-      ctxm.fillStyle = "rgba(255,255,255,1)";
 
-      ctxm.beginPath();
-      ctxm.ellipse(
-        maskWidth / 2,
-        maskHeight / 2,
-        apertureWidth / 2,
-        apertureHeight / 2,
-        0,
-        0,
-        2 * Math.PI,
-        false
-      );
-      ctxm.fill();
-
-      ctxm.filter = "none";
-      ctxm.globalCompositeOperation = "source-over";
-    }
-    function prepareMaskRectangular() {
-      ctxm.fillStyle = "rgba(255,255,255,0)";
-      ctxm.fillRect(0, 0, maskWidth, maskHeight);
-      ctxm.filter = `blur(${apertureBlur}px)`;
-      ctxm.fillStyle = "rgba(255,255,255,1)";
-
-      ctxm.fillRect(apertureBlur, apertureBlur, apertureWidth, apertureHeight);
-
-      ctxm.filter = "none";
-      ctxm.globalCompositeOperation = "source-over";
-    }
-
-    function prepareMaskRoundRectangular() {
-      ctxm.fillStyle = "rgba(255,255,255,0)";
-      ctxm.fillRect(0, 0, maskWidth, maskHeight);
-      ctxm.filter = `blur(${apertureBlur}px)`;
-      ctxm.fillStyle = "rgba(255,255,255,1)";
-
-      ctxm.beginPath();
-      ctxm.roundRect(
-        apertureBlur,
-        apertureBlur,
-        apertureWidth,
-        apertureHeight,
-        apertureCornerRadius
-      );
-      ctxm.fill();
-
-      ctxm.filter = "none";
-      ctxm.globalCompositeOperation = "source-over";
-    }
     function animateMouseMotion(): void {
       frameRequestID = window.requestAnimationFrame(animate);
       function animate() {
@@ -522,8 +487,6 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
           }
 
           redraw = false;
-          let now = performance.now();
-          lastTimeStamp = now;
         }
         frameRequestID = window.requestAnimationFrame(animate);
       }
@@ -628,7 +591,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     document.addEventListener("mouseup", onMouseUp, false);
 
     // data saving
-    var trial_data = {
+    let trial_data = {
       word_boxes: wordBoxes,
       image_data: imageData,
       mouse_data: mouseData,
@@ -640,7 +603,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
 
     // function to end trial when it is time
     function end_trial(): void {
-      stopTime = performance.now();
+      let stopTime = performance.now();
       window.cancelAnimationFrame(frameRequestID);
 
       document.removeEventListener("mousemove", onMove, false);
@@ -650,8 +613,8 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       trial_data.start_time = startTime - timeZero;
       trial_data.reading_time = stopTime - startTime;
 
-      canvasShown.style.cursor = "default"; // optional, see below
       display_element.innerHTML = "";
+
       // end trial
       jsPsych.finishTrial(trial_data);
     }
