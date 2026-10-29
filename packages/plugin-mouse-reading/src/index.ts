@@ -339,9 +339,9 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
         let wordStarts = boundaries.start;
         let wordEnds = boundaries.end;
         let wordBoxesOnLine = [];
-        for (let i = 0; i < wordStarts.length; i++) {
-          let textBefore = l.slice(0, wordStarts[i]);
-          let textWord = l.slice(wordStarts[i], wordEnds[i]);
+        for (let w = 0; w < wordStarts.length; w++) {
+          let textBefore = l.slice(0, wordStarts[w]);
+          let textWord = l.slice(wordStarts[w], wordEnds[w]);
           let mText = ctx.measureText(textBefore);
           let mWord = ctx.measureText(textWord);
           let wordBox = wordCoordinates(textWord, mWord, textOffsetX + mText.width, y);
@@ -578,7 +578,6 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
         cy = Math.round(e.y);
       if (cx == lastX && cy == lastY) {
         // no move after rounding coordinates
-        redraw = redraw || false;
       } else {
         if (!waitingForStart) {
           logMouseEvent(lastX, lastY, performance.now() - startTime);

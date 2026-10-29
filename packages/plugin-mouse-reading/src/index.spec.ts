@@ -5,7 +5,7 @@ import jsPsychMouseReading from ".";
 jest.useFakeTimers();
 
 describe("mouse-reading plugin", () => {
-  it("should load", async () => {
+  test("should load", async () => {
     const { expectFinished, getHTML, getData, displayElement, jsPsych } = await startTimeline([
       {
         type: jsPsychMouseReading,
@@ -14,7 +14,7 @@ describe("mouse-reading plugin", () => {
     ]);
 
     // minimal version
-    await expect(displayElement.querySelector("canvas"));
+    await expect(displayElement.querySelector("canvas")).not.toBeNull();
     // later I plan to add 2 simulated mouse clicks
     // I know the offset, but the location of the stop button
     // depends on the text length which we do not know
