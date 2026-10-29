@@ -488,9 +488,6 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     function animateMouseMotion(): void {
       frameRequestID = window.requestAnimationFrame(animate);
       function animate() {
-        if (!waitingForStart) {
-          logMouseEvent(lastX, lastY, performance.now() - startTime);
-        }
         if (redraw) {
           ctxShown.fillStyle = canvasColour;
           ctxShown.fillRect(0, 0, canvasWidth, canvasHeight);
@@ -557,6 +554,9 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
         // no move after rounding coordinates
         redraw = redraw || false;
       } else {
+        if (!waitingForStart) {
+          logMouseEvent(lastX, lastY, performance.now() - startTime);
+        }
         if (insideCanvas(cx, cy)) {
           // mouse affects canvas (inside or just beyond the boundary)
           redraw = true;
