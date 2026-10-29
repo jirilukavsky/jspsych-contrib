@@ -6,7 +6,8 @@ const info = <const>{
   name: "plugin-mouse-reading",
   version: version,
   parameters: {
-    /** Array that defines the size of the canvas element in pixels. First value is height, second value is width. */
+    /** Array that defines the size of the canvas element in pixels.
+     * First value is height, second value is width. */
     canvas_size: {
       type: ParameterType.INT,
       array: true,
@@ -410,6 +411,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       ctxBlur.fillRect(0, 0, ctxBlur.canvas.width, ctxBlur.canvas.height);
       ctxBlur.filter = `blur(${textBlur}px)`;
       draw_text(ctxBlur);
+      // the stop button is also blurred
       draw_target(ctxBlur, stopButtonX, stopButtonY, buttonRadius, "darkred");
       ctxBlur.filter = "none";
 
@@ -607,30 +609,26 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     animateMouseMotion();
     document.addEventListener("mousemove", onMove, false);
     document.addEventListener("mousedown", onMouseDown, false);
-
-    // data saving
-    let trial_data = {
-      word_boxes: wordBoxes,
-      image_data: imageData,
-      mouse_data: mouseData,
-      start_time: -1,
-      reading_time: -1,
-      start_button: [startButtonX, startButtonY],
-      stop_button: [stopButtonX, stopButtonY],
-    };
+    // no more code to run within trial
+    // only function definifions are below
 
     // function to end trial when it is time
     function end_trial(): void {
       let stopTime = performance.now();
-      window.cancelAnimationFrame(frameRequestID);
+      // data saving
+      let trial_data = {
+        word_boxes: wordBoxes,
+        image_data: imageData,
+        mouse_data: mouseData,
+        start_time: startTime - timeZero,
+        reading_time: stopTime - startTime,
+        start_button: [startButtonX, startButtonY],
+        stop_button: [stopButtonX, stopButtonY],
+      };
 
+      window.cancelAnimationFrame(frameRequestID);
       document.removeEventListener("mousemove", onMove, false);
       document.removeEventListener("mousedown", onMouseDown, false);
-
-      // gather the data to store for the trial
-      trial_data.start_time = startTime - timeZero;
-      trial_data.reading_time = stopTime - startTime;
-
       display_element.innerHTML = "";
 
       // end trial
