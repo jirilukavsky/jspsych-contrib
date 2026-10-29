@@ -13,7 +13,7 @@ const info = <const>{
       array: true,
       default: [240, 500],
     },
-    /** Presented text. Each different string in the array will become a separate line of text. */
+    /** Presented text. Each string in the array will become a separate line of text. */
     text_lines: {
       type: ParameterType.STRING,
       default: [""],
@@ -55,17 +55,32 @@ const info = <const>{
       type: ParameterType.INT,
       default: 0,
     },
-    /** Font family for the text */
+    /** Font family for the text.
+     * It is mixed together with other font properties
+     * `${font_weight} ${font_size} ${font_family}`
+     * into a single font CSS property
+     * https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/font
+     */
     font_family: {
       type: ParameterType.STRING,
       default: "monospace",
     },
-    /** Font size for the text */
+    /** Font size for the text
+     * It is mixed together with other font properties
+     * `${font_weight} ${font_size} ${font_family}`
+     * into a single font CSS property
+     * https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/font
+     */
     font_size: {
       type: ParameterType.STRING,
       default: "24px",
     },
-    /** Font weight for the text */
+    /** Font weight for the text
+     * It is mixed together with other font properties
+     * `${font_weight} ${font_size} ${font_family}`
+     * into a single font CSS property
+     * https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/font
+     */
     font_weight: {
       type: ParameterType.STRING,
       default: "normal",
@@ -211,7 +226,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     // text position
     const textOffsetX = trial.text_offset[0];
     const textOffsetY = trial.text_offset[1];
-    let textFont = trial.font_weight + " " + trial.font_size + " " + trial.font_family;
+    let textFont = `${trial.font_weight} ${trial.font_size} ${trial.font_family}`;
     // button placement
     const buttonOffsets = [...trial.button_offset, ...trial.button_offset];
     const startOffsetX = buttonOffsets[0];
@@ -243,6 +258,17 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     let imageData = "";
     let startTime: number; // clicked Start, as performance.now()
     let timeZero: number; // start of the trial, as performance.now()
+
+    // value checks
+    if (apertureBlur < 0) {
+      throw new Error("The aperture_blur cannot be negative.");
+    }
+    if (trial.text_lines.length == 1 && trial.text_lines[0].length == 0) {
+      throw new Error("The text_lines cannot be empty text.");
+    }
+    if (trial.canvas_size.length != 2) {
+      throw new Error("The canvas_size must have two elements: [height, width]");
+    }
 
     // Create canvas
     const stimulusElement = document.createElement("div");
