@@ -2,6 +2,76 @@ import { JsPsych, JsPsychPlugin, ParameterType, TrialType } from "jspsych";
 
 import { version } from "../package.json";
 
+/**
+ * Find the word boundaries in a line of text.
+ *
+ * Words are runs of non-space characters separated by one or more spaces.
+ * Only the space character (" ") is treated as a separator, so tabs and other
+ * whitespace are part of a word. Leading and trailing spaces are ignored.
+ *
+ * The returned indices are suitable for `String.prototype.slice`:
+ * `sentence.slice(start[i], end[i])` gives the i-th word.
+ *
+ * @param sentence - The line of text to split.
+ * @returns `start` holds the index of each word's first character, and `end`
+ *   holds the index just past each word's last character (exclusive). Both
+ *   arrays have one entry per word, and both are empty if the text has no words.
+ *
+ * @example
+ * findWordBoundaries("  The cat ");
+ * // { start: [2, 6], end: [5, 9] }
+ */
+function findWordBoundaries(sentence: string) {
+  let startPositions = [];
+  let endPositions = [];
+  let wordStarted = false;
+  for (let i = 0; i < sentence.length; i++) {
+    if (sentence[i] == " ") {
+      if (wordStarted) {
+        wordStarted = false;
+        endPositions.push(i);
+      }
+    } else {
+      if (!wordStarted) {
+        wordStarted = true;
+        startPositions.push(i);
+      }
+    }
+  }
+  if (wordStarted) endPositions.push(sentence.length);
+  return { start: startPositions, end: endPositions };
+}
+
+function wordCoordinates(word: string, measures: TextMetrics, offX: number, offY: number) {
+  let coords = {
+    word: word,
+    left: offX,
+    right: offX + measures.width,
+    width: measures.width,
+    height: measures.fontBoundingBoxAscent + measures.fontBoundingBoxDescent,
+    baseline: offY,
+    top: offY - measures.fontBoundingBoxAscent,
+    bottom: offY + measures.fontBoundingBoxDescent,
+  };
+  return coords;
+}
+
+function canvasMousePos(e: MouseEvent, canvas: HTMLCanvasElement): { x: number; y: number } {
+  const r = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * (canvas.width / r.width),
+    y: (e.clientY - r.top) * (canvas.height / r.height),
+  };
+}
+
+function saveCanvas(canvas: HTMLCanvasElement, filename: string) {
+  const dataURL = canvas.toDataURL("image/png");
+  const link = document.createElement("a");
+  link.href = dataURL;
+  link.download = filename;
+  link.click();
+}
+
 const info = <const>{
   name: "plugin-mouse-reading",
   version: version,
@@ -364,19 +434,6 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
         y += lineHeight;
       }
     }
-    function wordCoordinates(word: string, measures: TextMetrics, offX: number, offY: number) {
-      let coords = {
-        word: word,
-        left: offX,
-        right: offX + measures.width,
-        width: measures.width,
-        height: measures.fontBoundingBoxAscent + measures.fontBoundingBoxDescent,
-        baseline: offY,
-        top: offY - measures.fontBoundingBoxAscent,
-        bottom: offY + measures.fontBoundingBoxDescent,
-      };
-      return coords;
-    }
     function draw_target(
       ctx: CanvasRenderingContext2D,
       cx: number,
@@ -463,13 +520,6 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       prepareMaskWithShape(maskShape);
       // saveCanvas(canvasMask, "mask.png");
       // end of drawing
-    }
-    function saveCanvas(canvas, filename) {
-      const dataURL = canvas.toDataURL("image/png");
-      const link = document.createElement("a");
-      link.href = dataURL;
-      link.download = filename;
-      link.click();
     }
     function prepareMaskWithShape(maskShape: string) {
       ctxMask.fillStyle = "rgba(255,255,255,0)";
@@ -562,13 +612,6 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     function logMouseEvent(x: number, y: number, timestamp: number) {
       let eventRecord = { x: x, y: y, t: timestamp };
       mouseData.push(eventRecord);
-    }
-    function canvasMousePos(e: MouseEvent, canvas: HTMLCanvasElement): { x: number; y: number } {
-      const r = canvas.getBoundingClientRect();
-      return {
-        x: (e.clientX - r.left) * (canvas.width / r.width),
-        y: (e.clientY - r.top) * (canvas.height / r.height),
-      };
     }
     function insideCanvas(x: number, y: number): boolean {
       const delta = 2;
@@ -667,26 +710,6 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
 
       // end trial
       jsPsych.finishTrial(trial_data);
-    }
-    function findWordBoundaries(sentence: string) {
-      let startPositions = [];
-      let endPositions = [];
-      let wordStarted = false;
-      for (let i = 0; i < sentence.length; i++) {
-        if (sentence[i] == " ") {
-          if (wordStarted) {
-            wordStarted = false;
-            endPositions.push(i);
-          }
-        } else {
-          if (!wordStarted) {
-            wordStarted = true;
-            startPositions.push(i);
-          }
-        }
-      }
-      if (wordStarted) endPositions.push(sentence.length);
-      return { start: startPositions, end: endPositions };
     }
   }
   // utility functions potentially shared between trial() and simulate()
