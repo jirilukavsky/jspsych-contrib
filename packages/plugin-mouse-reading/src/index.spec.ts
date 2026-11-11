@@ -26,13 +26,19 @@ describe("mouse-reading plugin", () => {
 
 describe("mouse-reading simulation", () => {
   test("data mode works", async () => {
-    const { expectFinished, getData } = await simulateTimeline([
-      {
-        type: jsPsychMouseReading,
-        text_lines: ["A very short text."],
-      },
-    ]);
-
+    const { expectFinished, getData } = await simulateTimeline(
+      [
+        {
+          type: jsPsychMouseReading,
+          text_lines: ["A very short text."],
+        },
+      ],
+      "data-only"
+    );
+    // TODO the test is not working now
+    await expectFinished();
+    const response = getData().values()[0].response;
+    console.log(response);
     // minimal version
     //await expect(displayElement.querySelector("canvas")).not.toBeNull();
     // later I plan to add 2 simulated mouse clicks
