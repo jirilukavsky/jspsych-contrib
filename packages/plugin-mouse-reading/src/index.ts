@@ -21,12 +21,12 @@ const info = <const>{
     },
     /** Diameter of the circular aperture,
      * width of the elliptical/rectangular/rounded rectangular aperture (unblurred view).
-     * If aperture_gradient is specified,
+     * If aperture_blur is specified,
      * the aperture_width corresponds to the distance to the midpoint (50% sharp view, 50% blurred view).
-     * The "full", 100%-sharp view is smaller by 2 * aperture_gradient
-     * (aperture_gradient on both sides).
-     * The "partial", 0%-sharp view is larger by 2 * aperture_gradient
-     * (aperture_gradient on both sides). */
+     * The "full", 100%-sharp view is smaller by 2 * aperture_blur
+     * (aperture_blur on both sides).
+     * The "partial", 0%-sharp view is larger by 2 * aperture_blur
+     * (aperture_blur on both sides). */
     aperture_width: {
       type: ParameterType.INT,
       default: 60,
@@ -111,8 +111,15 @@ const info = <const>{
       array: true,
       default: [20, 30],
     },
-    /** Offset of the button center relative to the text baseline (text_offset).
-     * Positive values represent shift left and up. */
+    /** Offset of the button centers, with 2 or 4 elements
+     * ([offsetX, offsetY] is values are shared for start and stop buttons,
+     * or [startOffsetX, startOffsetY, startOffsetX, startOffsetY]
+     * if you want to specify different values for each button.
+     * The offset values are
+     * relative to the text baseline (text_offset).
+     * Positive X-values represent shift away from the text
+     * (left for start button, right for stop button).
+     * Positive Y-values represent shifts up. */
     button_offset: {
       type: ParameterType.INT,
       array: true,
@@ -136,7 +143,7 @@ const info = <const>{
     /** If true, image data in PNG format are returned for later analysis. */
     store_image_data: {
       type: ParameterType.BOOL,
-      default: true,
+      default: false,
     },
     /** Canvas colour */
     canvas_colour: {
@@ -163,7 +170,7 @@ const info = <const>{
     mouse_data: {
       type: ParameterType.OBJECT,
     },
-    /** Array of array of word coordinates. The top-level array corresponds to the text line, each array element on the second level correspons to one word.
+    /** Array of array of word coordinates. The top-level array corresponds to the text line, each array element on the second level corresponds to one word.
      * The coordinates are relative to the canvas, i.e. same as the mouse data. */
     word_boxes: {
       type: ParameterType.OBJECT,
@@ -579,8 +586,10 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       if (cx == lastX && cy == lastY) {
         // no move after rounding coordinates
       } else {
+        // the cursor moved
         if (!waitingForStart) {
-          logMouseEvent(lastX, lastY, performance.now() - startTime);
+          // we are in the mouse-reading phase of the experiment
+          logMouseEvent(cx, cy, performance.now() - startTime);
         }
         if (insideCanvas(cx, cy)) {
           // mouse affects canvas (inside or just beyond the boundary)
@@ -635,7 +644,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     document.addEventListener("mousemove", onMove, false);
     document.addEventListener("mousedown", onMouseDown, false);
     // no more code to run within trial
-    // only function definifions are below
+    // only function definitions are below
 
     // function to end trial when it is time
     function end_trial(): void {
