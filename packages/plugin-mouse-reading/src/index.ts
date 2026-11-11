@@ -211,6 +211,18 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
   constructor(private jsPsych: JsPsych) {}
 
   trial(display_element: HTMLElement, trial: TrialType<Info>) {
+    // checks ------------------------------------------------------------
+    // value checks
+    if (trial.aperture_blur < 0) {
+      throw new Error("The aperture_blur cannot be negative.");
+    }
+    if (trial.text_lines.length == 1 && trial.text_lines[0].length == 0) {
+      throw new Error("The text_lines cannot be empty text.");
+    }
+    if (trial.canvas_size.length != 2) {
+      throw new Error("The canvas_size must have two elements: [height, width]");
+    }
+
     // parameters, variables, data ---------------------------------------
     // aperture
     let redraw = true;
@@ -266,17 +278,6 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     let imageData = "";
     let startTime: number; // clicked Start, as performance.now()
     let timeZero: number; // start of the trial, as performance.now()
-
-    // value checks
-    if (apertureBlur < 0) {
-      throw new Error("The aperture_blur cannot be negative.");
-    }
-    if (trial.text_lines.length == 1 && trial.text_lines[0].length == 0) {
-      throw new Error("The text_lines cannot be empty text.");
-    }
-    if (trial.canvas_size.length != 2) {
-      throw new Error("The canvas_size must have two elements: [height, width]");
-    }
 
     // Create canvas
     const stimulusElement = document.createElement("div");
