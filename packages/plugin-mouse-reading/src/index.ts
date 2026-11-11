@@ -1,37 +1,7 @@
 import { JsPsych, JsPsychPlugin, ParameterType, TrialType } from "jspsych";
 
 import { version } from "../package.json";
-import { findWordBoundaries } from "./utils";
-
-function wordCoordinates(word: string, measures: TextMetrics, offX: number, offY: number) {
-  let coords = {
-    word: word,
-    left: offX,
-    right: offX + measures.width,
-    width: measures.width,
-    height: measures.fontBoundingBoxAscent + measures.fontBoundingBoxDescent,
-    baseline: offY,
-    top: offY - measures.fontBoundingBoxAscent,
-    bottom: offY + measures.fontBoundingBoxDescent,
-  };
-  return coords;
-}
-
-function canvasMousePos(e: MouseEvent, canvas: HTMLCanvasElement): { x: number; y: number } {
-  const r = canvas.getBoundingClientRect();
-  return {
-    x: (e.clientX - r.left) * (canvas.width / r.width),
-    y: (e.clientY - r.top) * (canvas.height / r.height),
-  };
-}
-
-function saveCanvas(canvas: HTMLCanvasElement, filename: string) {
-  const dataURL = canvas.toDataURL("image/png");
-  const link = document.createElement("a");
-  link.href = dataURL;
-  link.download = filename;
-  link.click();
-}
+import { canvasMousePos, findWordBoundaries, saveCanvas, wordCoordinates } from "./utils";
 
 const info = <const>{
   name: "plugin-mouse-reading",
