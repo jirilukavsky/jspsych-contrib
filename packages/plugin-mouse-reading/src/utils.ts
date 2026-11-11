@@ -38,6 +38,17 @@ export function findWordBoundaries(sentence: string) {
   return { start: startPositions, end: endPositions };
 }
 
+export interface WordBox {
+  word: string;
+  left: number;
+  right: number;
+  width: number;
+  height: number;
+  baseline: number;
+  top: number;
+  bottom: number;
+}
+
 /**
  * Compute the bounding box of a word drawn on the canvas.
  *
@@ -65,7 +76,12 @@ export function findWordBoundaries(sentence: string) {
  * wordCoordinates("cat", m, 10, 50);
  * // { word: "cat", left: 10, right: 10 + m.width, width: m.width, ... baseline: 50 }
  */
-export function wordCoordinates(word: string, measures: TextMetrics, offX: number, offY: number) {
+export function wordCoordinates(
+  word: string,
+  measures: TextMetrics,
+  offX: number,
+  offY: number
+): WordBox {
   let coords = {
     word: word,
     left: offX,

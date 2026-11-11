@@ -1,7 +1,11 @@
 import { JsPsych, JsPsychPlugin, ParameterType, TrialType } from "jspsych";
 
 import { version } from "../package.json";
-import { canvasMousePos, findWordBoundaries, saveCanvas, wordCoordinates } from "./utils";
+import { WordBox, canvasMousePos, findWordBoundaries, saveCanvas, wordCoordinates } from "./utils";
+
+function textFontFromProperties(itrial: TrialType<Info>): string {
+  return `${itrial.font_weight} ${itrial.font_size} ${itrial.font_family}`;
+}
 
 const info = <const>{
   name: "plugin-mouse-reading",
@@ -114,7 +118,7 @@ const info = <const>{
     },
     /** Offset of the button centers, with 2 or 4 elements
      * ([offsetX, offsetY] is values are shared for start and stop buttons,
-     * or [startOffsetX, startOffsetY, startOffsetX, startOffsetY]
+     * or [startOffsetX, startOffsetY, stopOffsetX, stopOffsetY]
      * if you want to specify different values for each button.
      * The offset values are
      * relative to the text baseline (text_offset).
@@ -216,11 +220,17 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     if (trial.aperture_blur < 0) {
       throw new Error("The aperture_blur cannot be negative.");
     }
-    if (trial.text_lines.length == 1 && trial.text_lines[0].length == 0) {
-      throw new Error("The text_lines cannot be empty text.");
+    if (trial.text_lines.length == 0) {
+      throw new Error("The text_lines cannot be empty array.");
+    }
+    if (trial.text_lines[0].length == 0) {
+      throw new Error("The text_lines values cannot be empty text.");
     }
     if (trial.canvas_size.length != 2) {
       throw new Error("The canvas_size must have two elements: [height, width]");
+    }
+    if (trial.button_offset.length != 2 && trial.button_offset.length != 4) {
+      throw new Error("The button_offset should have 2 or 4 elements.");
     }
 
     // parameters, variables, data ---------------------------------------
@@ -246,19 +256,18 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     // text position
     const textOffsetX = trial.text_offset[0];
     const textOffsetY = trial.text_offset[1];
-    let textFont = `${trial.font_weight} ${trial.font_size} ${trial.font_family}`;
+    let textFont = textFontFromProperties(trial);
     // button placement
-    const buttonOffsets = [...trial.button_offset, ...trial.button_offset];
-    const startOffsetX = buttonOffsets[0];
-    const startOffsetY = buttonOffsets[1];
-    const stopOffsetX = buttonOffsets[2];
-    const stopOffsetY = buttonOffsets[3];
+    const startOffsetX = trial.button_offset[0];
+    const startOffsetY = trial.button_offset[1];
+    const stopOffsetX =
+      trial.button_offset.length == 2 ? trial.button_offset[0] : trial.button_offset[2];
+    const stopOffsetY =
+      trial.button_offset.length == 2 ? trial.button_offset[1] : trial.button_offset[3];
     const buttonRadius = trial.button_size / 2;
     const cursorDistance = trial.cursor_distance;
-    let lastLineWidth = 0;
-    let lastLineY = 0;
-    let startButtonX = 0;
-    let startButtonY = 0;
+    const startButtonX = textOffsetX - startOffsetX;
+    const startButtonY = textOffsetY - startOffsetY;
     let stopButtonX = 0;
     let stopButtonY = 0;
 
@@ -317,11 +326,11 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     function draw_text(ctx: CanvasRenderingContext2D): void {
       const lineHeight = trial.line_height;
       const lines = trial.text_lines as string[];
-      let x = textOffsetX;
-      let y = textOffsetY;
+      let x = trial.text_offset[0];
+      let y = trial.text_offset[1];
 
       // draw text
-      ctx.font = textFont;
+      ctx.font = textFontFromProperties(trial);
       ctx.fillStyle = trial.font_colour;
       ctx.textRendering = trial.text_rendering as CanvasTextRendering;
 
@@ -330,16 +339,17 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
         y += lineHeight;
       }
     }
-    function measure_text(ctx: CanvasRenderingContext2D): void {
-      const lineHeight = trial.line_height;
-      const lines = trial.text_lines as string[];
-      let x = textOffsetX;
-      let y = textOffsetY;
+    function measureText(ctx: CanvasRenderingContext2D, itrial: TrialType<Info>): WordBox[][] {
+      const lineHeight = itrial.line_height;
+      const lines = itrial.text_lines as string[];
+      let x = itrial.text_offset[0];
+      let y = itrial.text_offset[1];
+      let allWordBoxes = [];
 
       // setup text
-      ctx.font = textFont;
-      ctx.fillStyle = trial.font_colour;
-      ctx.textRendering = trial.text_rendering as CanvasTextRendering;
+      ctx.font = textFontFromProperties(itrial);
+      ctx.fillStyle = itrial.font_colour;
+      ctx.textRendering = itrial.text_rendering as CanvasTextRendering;
 
       for (let i = 0; i < lines.length; i++) {
         let l = lines[i];
@@ -356,15 +366,10 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
           let wordBox = wordCoordinates(textWord, mWord, textOffsetX + mText.width, y);
           wordBoxesOnLine.push(wordBox);
         }
-        wordBoxes.push(wordBoxesOnLine);
-        if (i == lines.length - 1) {
-          // last line
-          lastLineY = y;
-          let mText = ctx.measureText(l);
-          lastLineWidth = mText.width;
-        }
+        allWordBoxes.push(wordBoxesOnLine);
         y += lineHeight;
       }
+      return allWordBoxes;
     }
     function draw_target(
       ctx: CanvasRenderingContext2D,
@@ -424,8 +429,10 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     }
     function setupGraphics() {
       // draw combined
-      measure_text(ctxShown);
-      updateButtonLocation();
+      wordBoxes = measureText(ctxShown, trial);
+      const lastWord = wordBoxes.at(-1)?.at(-1);
+      stopButtonX = lastWord.right + stopOffsetX;
+      stopButtonY = lastWord.baseline - stopOffsetY;
 
       // draw text blurred
       ctxBlur.globalCompositeOperation = "source-over";
@@ -534,12 +541,6 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       activeButtonX = stopButtonX;
       activeButtonY = stopButtonY;
       activeButtonRadius = buttonRadius;
-    }
-    function updateButtonLocation() {
-      startButtonX = textOffsetX - startOffsetX;
-      startButtonY = textOffsetY - startOffsetY;
-      stopButtonX = textOffsetX + lastLineWidth + stopOffsetX;
-      stopButtonY = lastLineY - stopOffsetY;
     }
     function logMouseEvent(x: number, y: number, timestamp: number) {
       let eventRecord = { x: x, y: y, t: timestamp };
