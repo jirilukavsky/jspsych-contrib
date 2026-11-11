@@ -146,3 +146,61 @@ export function canvasMousePos(e: MouseEvent, canvas: HTMLCanvasElement): { x: n
     y: (e.clientY - r.top) * (canvas.height / r.height),
   };
 }
+
+/**
+ * Simulate a straight, constant-speed mouse movement between two points.
+ *
+ * Returns samples as a mouse recorder would log them: one sample every
+ * `1000 / frame` ms along the line, starting at `startTime`. The first sample is
+ * always exactly `(x1, y1)` at `startTime`, and the last is always exactly
+ * `(x2, y2)` at `startTime + duration`, where `duration = distance / speed`.
+ * Because the movement rarely ends on a sample boundary, the last interval is
+ * usually shorter than `1000 / frame` ms. If the two points are identical, a
+ * single sample is returned.
+ *
+ * Coordinates are not rounded, so they can be fractional pixels.
+ *
+ * @param x1 - X coordinate of the start point, in canvas pixels.
+ * @param y1 - Y coordinate of the start point, in canvas pixels.
+ * @param x2 - X coordinate of the end point, in canvas pixels.
+ * @param y2 - Y coordinate of the end point, in canvas pixels.
+ * @param speed - Movement speed in pixels per second. Must be positive.
+ * @param frame - Sampling rate in samples per second (Hz). Must be positive.
+ * @param startTime - Time of the first sample, in milliseconds.
+ * @returns Samples `{ x, y, t }` in time order, with `t` in milliseconds.
+ * @throws If `speed` or `frame` is not a positive number.
+ *
+ * @example
+ * create_simulated_mouse_data_along_line(0, 0, 100, 0, 100, 10, 0);
+ * // 11 samples: { x: 0, y: 0, t: 0 }, { x: 10, y: 0, t: 100 }, ... { x: 100, y: 0, t: 1000 }
+ */
+export function createSimulatedMouseDataAlongLine(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  speed: number, // pixels per second
+  frame: number, // samples per second
+  startTime: number // ms
+): { x: number; y: number; t: number }[] {
+  if (!(speed > 0) || !(frame > 0)) {
+    throw new Error("speed and frame must be positive numbers.");
+  }
+  const distance = Math.hypot(x2 - x1, y2 - y1);
+  if (distance === 0) {
+    return [{ x: x1, y: y1, t: startTime }];
+  }
+
+  const duration = (distance / speed) * 1000; // ms
+  const dt = 1000 / frame; // ms between samples
+  const points: { x: number; y: number; t: number }[] = [];
+
+  // samples strictly before the end, spaced dt apart
+  for (let i = 0; i * dt < duration; i++) {
+    const f = (i * dt) / duration; // fraction of the way, 0 <= f < 1
+    points.push({ x: x1 + (x2 - x1) * f, y: y1 + (y2 - y1) * f, t: startTime + i * dt });
+  }
+  // the last point is always the exact end point
+  points.push({ x: x2, y: y2, t: startTime + duration });
+  return points;
+}

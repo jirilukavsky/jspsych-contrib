@@ -1,4 +1,4 @@
-import { startTimeline } from "@jspsych/test-utils";
+import { simulateTimeline, startTimeline } from "@jspsych/test-utils";
 
 import { findWordBoundaries } from "./utils";
 import jsPsychMouseReading from ".";
@@ -16,6 +16,25 @@ describe("mouse-reading plugin", () => {
 
     // minimal version
     await expect(displayElement.querySelector("canvas")).not.toBeNull();
+    // later I plan to add 2 simulated mouse clicks
+    // I know the offset, but the location of the stop button
+    // depends on the text length which we do not know
+
+    // await expectFinished();
+  });
+});
+
+describe("mouse-reading simulation", () => {
+  test("data mode works", async () => {
+    const { expectFinished, getData } = await simulateTimeline([
+      {
+        type: jsPsychMouseReading,
+        text_lines: ["A very short text."],
+      },
+    ]);
+
+    // minimal version
+    //await expect(displayElement.querySelector("canvas")).not.toBeNull();
     // later I plan to add 2 simulated mouse clicks
     // I know the offset, but the location of the stop button
     // depends on the text length which we do not know

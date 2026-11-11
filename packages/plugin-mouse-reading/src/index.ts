@@ -1,7 +1,14 @@
 import { JsPsych, JsPsychPlugin, ParameterType, TrialType } from "jspsych";
 
 import { version } from "../package.json";
-import { WordBox, canvasMousePos, findWordBoundaries, saveCanvas, wordCoordinates } from "./utils";
+import {
+  WordBox,
+  canvasMousePos,
+  createSimulatedMouseDataAlongLine,
+  findWordBoundaries,
+  saveCanvas,
+  wordCoordinates,
+} from "./utils";
 
 function textFontFromProperties(itrial: TrialType<Info>): string {
   return `${itrial.font_weight} ${itrial.font_size} ${itrial.font_family}`;
@@ -339,38 +346,7 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
         y += lineHeight;
       }
     }
-    function measureText(ctx: CanvasRenderingContext2D, itrial: TrialType<Info>): WordBox[][] {
-      const lineHeight = itrial.line_height;
-      const lines = itrial.text_lines as string[];
-      let x = itrial.text_offset[0];
-      let y = itrial.text_offset[1];
-      let allWordBoxes = [];
 
-      // setup text
-      ctx.font = textFontFromProperties(itrial);
-      ctx.fillStyle = itrial.font_colour;
-      ctx.textRendering = itrial.text_rendering as CanvasTextRendering;
-
-      for (let i = 0; i < lines.length; i++) {
-        let l = lines[i];
-        //ctx.fillText(l, x, y);
-        let boundaries = findWordBoundaries(l);
-        let wordStarts = boundaries.start;
-        let wordEnds = boundaries.end;
-        let wordBoxesOnLine = [];
-        for (let w = 0; w < wordStarts.length; w++) {
-          let textBefore = l.slice(0, wordStarts[w]);
-          let textWord = l.slice(wordStarts[w], wordEnds[w]);
-          let mText = ctx.measureText(textBefore);
-          let mWord = ctx.measureText(textWord);
-          let wordBox = wordCoordinates(textWord, mWord, textOffsetX + mText.width, y);
-          wordBoxesOnLine.push(wordBox);
-        }
-        allWordBoxes.push(wordBoxesOnLine);
-        y += lineHeight;
-      }
-      return allWordBoxes;
-    }
     function draw_target(
       ctx: CanvasRenderingContext2D,
       cx: number,
@@ -428,12 +404,6 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       );
     }
     function setupGraphics() {
-      // draw combined
-      wordBoxes = measureText(ctxShown, trial);
-      const lastWord = wordBoxes.at(-1)?.at(-1);
-      stopButtonX = lastWord.right + stopOffsetX;
-      stopButtonY = lastWord.baseline - stopOffsetY;
-
       // draw text blurred
       ctxBlur.globalCompositeOperation = "source-over";
       ctxBlur.fillStyle = canvasColour;
@@ -613,7 +583,13 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
     }
 
     // start trial
+    wordBoxes = this.measureText(ctxShown, trial);
+    const lastWord = wordBoxes.at(-1)?.at(-1);
+    stopButtonX = lastWord.right + stopOffsetX;
+    stopButtonY = lastWord.baseline - stopOffsetY;
+
     setupGraphics();
+
     timeZero = performance.now();
     activateStartButton();
     animateMouseMotion();
@@ -645,7 +621,139 @@ class MouseReadingPlugin implements JsPsychPlugin<Info> {
       jsPsych.finishTrial(trial_data);
     }
   }
-  // utility functions potentially shared between trial() and simulate()
+
+  private measureText(ctx: CanvasRenderingContext2D, itrial: TrialType<Info>): WordBox[][] {
+    const lineHeight = itrial.line_height;
+    const lines = itrial.text_lines as string[];
+    let x = itrial.text_offset[0];
+    let y = itrial.text_offset[1];
+    let allWordBoxes = [];
+
+    // setup text
+    ctx.font = textFontFromProperties(itrial);
+    ctx.fillStyle = itrial.font_colour;
+    ctx.textRendering = itrial.text_rendering as CanvasTextRendering;
+
+    for (let i = 0; i < lines.length; i++) {
+      let l = lines[i];
+      //ctx.fillText(l, x, y);
+      let boundaries = findWordBoundaries(l);
+      let wordStarts = boundaries.start;
+      let wordEnds = boundaries.end;
+      let wordBoxesOnLine = [];
+      for (let w = 0; w < wordStarts.length; w++) {
+        let textBefore = l.slice(0, wordStarts[w]);
+        let textWord = l.slice(wordStarts[w], wordEnds[w]);
+        let mText = ctx.measureText(textBefore);
+        let mWord = ctx.measureText(textWord);
+        let wordBox = wordCoordinates(textWord, mWord, x + mText.width, y);
+        wordBoxesOnLine.push(wordBox);
+      }
+      allWordBoxes.push(wordBoxesOnLine);
+      y += lineHeight;
+    }
+    return allWordBoxes;
+  }
+
+  simulate(
+    trial: TrialType<Info>,
+    simulation_mode: string,
+    simulation_options: any,
+    load_callback: () => void
+  ) {
+    if (simulation_mode == "data-only") {
+      load_callback();
+      this.simulate_data_only(trial, simulation_options);
+    }
+    if (simulation_mode == "visual") {
+      //this.simulate_visual(trial, simulation_options, load_callback);
+    }
+  }
+
+  private create_simulated_mouse_data(
+    px: number[],
+    py: number[],
+    speed: number,
+    framerate: number
+  ) {
+    // eventRecord = { x: x, y: y, t: timestamp };
+    let data = [];
+    let startTime = 0;
+    for (let p = 0; p < px.length - 1; p++) {
+      let line = createSimulatedMouseDataAlongLine(
+        px[p],
+        py[p],
+        px[p + 1],
+        py[p + 1],
+        speed,
+        framerate,
+        startTime
+      );
+      if (data.length == 0) {
+        data = [...data, ...line];
+      } else {
+        data = [...data, ...line.slice(1)];
+      }
+      startTime = line.at(-1).t;
+    }
+    return data;
+  }
+  private create_simulation_data(trial: TrialType<Info>, simulation_options) {
+    const canvas = document.createElement("canvas");
+    canvas.height = trial.canvas_size[0];
+    canvas.width = trial.canvas_size[1];
+
+    const wordBoxes = this.measureText(canvas.getContext("2d"), trial);
+    // buttons
+    const lastWord = wordBoxes.at(-1)?.at(-1);
+    const stopOffsetX =
+      trial.button_offset.length == 2 ? trial.button_offset[0] : trial.button_offset[2];
+    const stopOffsetY =
+      trial.button_offset.length == 2 ? trial.button_offset[1] : trial.button_offset[3];
+    const startButtonX = trial.text_offset[0] - trial.button_offset[0];
+    const startButtonY = trial.text_offset[1] - trial.button_offset[1];
+    const stopButtonX = lastWord.right + stopOffsetX;
+    const stopButtonY = lastWord.baseline - stopOffsetY;
+
+    // reading trajectory
+    let pointsX = [],
+      pointsY = [];
+    pointsX.push(startButtonX);
+    pointsY.push(startButtonY);
+    for (let line = 0; line < wordBoxes.length; line++) {
+      for (let word = 0; word < wordBoxes[line].length; word++) {
+        const wb = wordBoxes[line][word];
+        pointsX.push(wb.left);
+        pointsY.push(wb.baseline);
+        pointsX.push(wb.right);
+        pointsY.push(wb.baseline);
+      }
+    }
+    pointsX.push(stopButtonX);
+    pointsY.push(stopButtonY);
+
+    // speed in pixels per second
+    const speed = simulation_options.speed ?? 200;
+    // frame rate in number of samples per second
+    const framerate = simulation_options.framerate ?? 20;
+    const mouseData = this.create_simulated_mouse_data(pointsX, pointsY, speed, framerate);
+
+    let trial_data = {
+      word_boxes: wordBoxes,
+      image_data: "", // not implemented in simulation
+      mouse_data: mouseData,
+      start_time: this.jsPsych.randomization.sampleExGaussian(1000, 100, 1 / 150, true),
+      reading_time: mouseData.at(-1).t,
+      start_button: [startButtonX, startButtonY],
+      stop_button: [stopButtonX, stopButtonY],
+    };
+    return trial_data;
+  }
+  private simulate_data_only(trial: TrialType<Info>, simulation_options) {
+    const data = this.create_simulation_data(trial, simulation_options);
+
+    this.jsPsych.finishTrial(data);
+  }
 }
 
 export default MouseReadingPlugin;
